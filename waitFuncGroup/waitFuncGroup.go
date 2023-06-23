@@ -15,10 +15,16 @@ import (
 type WaitFuncGroup struct {
 	wg       sync.WaitGroup
 	funcs    map[int]func()
-	progress map[int]bool
+	progress map[int]TaskStatus
 	mu       sync.Mutex
-	ch       chan int
+	ch       chan TaskStatus
 	monitor  bool
+}
+
+type TaskStatus struct {
+	taskid int
+	done   bool
+	status bool
 }
 
 func (wfg *WaitFuncGroup) Add(f func()) {
@@ -27,16 +33,32 @@ func (wfg *WaitFuncGroup) Add(f func()) {
 	wfg.mu.Lock()
 	func_id := len(wfg.funcs) + 1
 	wfg.funcs[func_id] = f
-	wfg.progress[func_id] = false
+	wfg.progress[func_id] = TaskStatus{taskid: func_id, done: false, status: false}
 	wfg.mu.Unlock()
 
 	go func(id int) {
-		defer wfg.wg.Done()
+		defer func() {
+			if err := recover(); err != nil {
+				wfg.wg.Done()
+				wfg.ch <- TaskStatus{taskid: id, status: false, done: true}
+				wfg.mu.Lock()
+				for i := 1; i < len(wfg.progress)+1; i++ {
+					if !wfg.progress[i].done {
+						wfg.mu.Unlock()
+						return
+					}
+				}
+				close(wfg.ch)
+				wfg.mu.Unlock()
+			} else {
+				wfg.wg.Done()
+			}
+		}()
 		f()
-		wfg.ch <- id
+		wfg.ch <- TaskStatus{taskid: id, status: true, done: true}
 		wfg.mu.Lock()
 		for i := 1; i < len(wfg.progress)+1; i++ {
-			if !wfg.progress[i] {
+			if !wfg.progress[i].done {
 				wfg.mu.Unlock()
 				return
 			}
@@ -46,10 +68,7 @@ func (wfg *WaitFuncGroup) Add(f func()) {
 	}(func_id)
 }
 
-func (wfg *WaitFuncGroup) Done() {
-	wfg.wg.Done()
-}
-
+// タスクが完了するまで待つ
 func (wfg *WaitFuncGroup) Wait() {
 	var table *tview.Table
 	app = tview.NewApplication()
@@ -59,8 +78,12 @@ func (wfg *WaitFuncGroup) Wait() {
 		go func() {
 			wfg.mu.Lock()
 			for i := 1; i < len(wfg.progress)+1; i++ {
-				if wfg.progress[i] {
-					setCompleteRow(table, i)
+				if wfg.progress[i].done {
+					if wfg.progress[i].status {
+						setCompleteRow(table, i)
+					} else {
+						setPanicRow(table, i)
+					}
 				} else {
 					setWorkingRow(table, i)
 				}
@@ -69,12 +92,16 @@ func (wfg *WaitFuncGroup) Wait() {
 		}()
 	}
 	go func() {
-		for id := range wfg.ch {
+		for taskstatus := range wfg.ch {
 			wfg.mu.Lock()
-			wfg.progress[id] = true
+			wfg.progress[taskstatus.taskid] = taskstatus
 			wfg.mu.Unlock()
 			if wfg.monitor {
-				setCompleteRow(table, id)
+				if taskstatus.status {
+					setCompleteRow(table, taskstatus.taskid)
+				} else {
+					setPanicRow(table, taskstatus.taskid)
+				}
 			}
 		}
 	}()
@@ -94,8 +121,8 @@ func (wfg *WaitFuncGroup) Wait() {
 func NewWaitFuncGroup() *WaitFuncGroup {
 	return &WaitFuncGroup{
 		funcs:    make(map[int]func()),
-		progress: make(map[int]bool),
-		ch:       make(chan int),
+		progress: make(map[int]TaskStatus),
+		ch:       make(chan TaskStatus),
 		monitor:  false,
 	}
 }
