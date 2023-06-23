@@ -35,3 +35,10 @@ func setWorkingRow(table *tview.Table, taskid int) {
 		table.SetCell(taskid, 1, tview.NewTableCell("working...").SetTextColor(tview.Styles.PrimaryTextColor).SetAlign(tview.AlignCenter))
 	})
 }
+
+func setPanicRow(table *tview.Table, taskid int) {
+	app.QueueUpdateDraw(func() {
+		table.SetCell(taskid, 0, tview.NewTableCell(strconv.Itoa(taskid)).SetTextColor(tview.Styles.PrimaryTextColor).SetAlign(tview.AlignCenter))
+		table.SetCell(taskid, 1, tview.NewTableCell("panic!").SetTextColor(tview.Styles.PrimaryTextColor).SetAlign(tview.AlignCenter))
+	})
+}
