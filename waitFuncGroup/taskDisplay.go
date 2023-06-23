@@ -22,14 +22,14 @@ func display(table *tview.Table) {
 	}
 }
 
-func completeRow(table *tview.Table, taskid int) {
+func setCompleteRow(table *tview.Table, taskid int) {
 	app.QueueUpdateDraw(func() {
 		table.SetCell(taskid, 0, tview.NewTableCell(strconv.Itoa(taskid)).SetTextColor(tview.Styles.PrimaryTextColor).SetAlign(tview.AlignCenter))
 		table.SetCell(taskid, 1, tview.NewTableCell("completed").SetTextColor(tview.Styles.PrimaryTextColor).SetAlign(tview.AlignCenter))
 	})
 }
 
-func workingRow(table *tview.Table, taskid int) {
+func setWorkingRow(table *tview.Table, taskid int) {
 	app.QueueUpdateDraw(func() {
 		table.SetCell(taskid, 0, tview.NewTableCell(strconv.Itoa(taskid)).SetTextColor(tview.Styles.PrimaryTextColor).SetAlign(tview.AlignCenter))
 		table.SetCell(taskid, 1, tview.NewTableCell("working...").SetTextColor(tview.Styles.PrimaryTextColor).SetAlign(tview.AlignCenter))
