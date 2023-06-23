@@ -60,9 +60,9 @@ func (wfg *WaitFuncGroup) Wait() {
 			wfg.mu.Lock()
 			for i := 1; i < len(wfg.progress)+1; i++ {
 				if wfg.progress[i] {
-					completeRow(table, i)
+					setCompleteRow(table, i)
 				} else {
-					workingRow(table, i)
+					setWorkingRow(table, i)
 				}
 			}
 			wfg.mu.Unlock()
@@ -74,7 +74,7 @@ func (wfg *WaitFuncGroup) Wait() {
 			wfg.progress[id] = true
 			wfg.mu.Unlock()
 			if wfg.monitor {
-				completeRow(table, id)
+				setCompleteRow(table, id)
 			}
 		}
 	}()
