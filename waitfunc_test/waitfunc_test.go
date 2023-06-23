@@ -6,6 +6,8 @@ import (
 
 	"sync"
 
+	"go.uber.org/goleak"
+
 	"github.com/ryunosuke121/waitTask/waitFuncGroup"
 )
 
@@ -82,4 +84,24 @@ func TestWaitFuncGroup3(t *testing.T) {
 		})
 	})
 	wfg.Wait()
+}
+
+func TestLeak(t *testing.T) {
+	wfg := waitFuncGroup.NewWaitFuncGroup()
+	wfg.Add(func() {
+		wfg.Add(func() {
+			go func() {
+				time.Sleep(3 * time.Second)
+			}()
+		})
+	})
+	wfg.Add(func() {
+		wfg.Add(func() {
+			go func() {
+				time.Sleep(2 * time.Second)
+			}()
+		})
+	})
+	wfg.Wait()
+	defer goleak.VerifyNone(t)
 }

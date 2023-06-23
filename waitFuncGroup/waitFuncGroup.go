@@ -1,13 +1,16 @@
 package waitFuncGroup
 
 import (
-	"fmt"
 	"sync"
+	"time"
+
+	"github.com/rivo/tview"
 )
 
 // 関数が渡されると、その関数をゴルーチンで実行する
 // タイムスケジュール機能
 // どれかのタスクがパニックを起こしたときにどうするかの検討
+// -> そのタスクをキャンセルして、他のタスクを実行する or そのまますべて終了させる
 
 type WaitFuncGroup struct {
 	wg       sync.WaitGroup
@@ -15,6 +18,7 @@ type WaitFuncGroup struct {
 	progress map[int]bool
 	mu       sync.Mutex
 	ch       chan int
+	monitor  bool
 }
 
 func (wfg *WaitFuncGroup) Add(f func()) {
@@ -24,13 +28,22 @@ func (wfg *WaitFuncGroup) Add(f func()) {
 	func_id := len(wfg.funcs) + 1
 	wfg.funcs[func_id] = f
 	wfg.progress[func_id] = false
+	wfg.mu.Unlock()
 
 	go func(id int) {
 		defer wfg.wg.Done()
 		f()
 		wfg.ch <- id
+		wfg.mu.Lock()
+		for i := 1; i < len(wfg.progress)+1; i++ {
+			if !wfg.progress[i] {
+				wfg.mu.Unlock()
+				return
+			}
+		}
+		close(wfg.ch)
+		wfg.mu.Unlock()
 	}(func_id)
-	wfg.mu.Unlock()
 }
 
 func (wfg *WaitFuncGroup) Done() {
@@ -38,29 +51,43 @@ func (wfg *WaitFuncGroup) Done() {
 }
 
 func (wfg *WaitFuncGroup) Wait() {
-	fmt.Println("実行中の関数")
-	for k := range wfg.funcs {
-		fmt.Println(k)
-	}
+	var table *tview.Table
+	app = tview.NewApplication()
 
+	if wfg.monitor {
+		table = createTable()
+		go func() {
+			wfg.mu.Lock()
+			for i := 1; i < len(wfg.progress)+1; i++ {
+				if wfg.progress[i] {
+					completeRow(table, i)
+				} else {
+					workingRow(table, i)
+				}
+			}
+			wfg.mu.Unlock()
+		}()
+	}
 	go func() {
 		for id := range wfg.ch {
 			wfg.mu.Lock()
 			wfg.progress[id] = true
 			wfg.mu.Unlock()
-			fmt.Println("------------------------")
-			for i := 1; i < len(wfg.progress)+1; i++ {
-				if wfg.progress[i] {
-					fmt.Printf("task%d:Completed\n", i)
-				} else {
-					fmt.Printf("task%d:Working\n", i)
-				}
+			if wfg.monitor {
+				completeRow(table, id)
 			}
-			fmt.Println("------------------------")
 		}
 	}()
+	if wfg.monitor {
+		go func() {
+			display(table)
+		}()
+	}
 	wfg.wg.Wait()
-	close(wfg.ch)
+	if wfg.monitor {
+		time.Sleep(1 * time.Second)
+		app.Stop()
+	}
 }
 
 // 新しいWaitFuncGroupを作成する
@@ -69,5 +96,11 @@ func NewWaitFuncGroup() *WaitFuncGroup {
 		funcs:    make(map[int]func()),
 		progress: make(map[int]bool),
 		ch:       make(chan int),
+		monitor:  false,
 	}
+}
+
+// 実行中の関数を表示する
+func (wfg *WaitFuncGroup) Monitor() {
+	wfg.monitor = true
 }
