@@ -4,6 +4,8 @@ import (
 	"sync"
 	"time"
 
+	"fmt"
+
 	"github.com/rivo/tview"
 )
 
@@ -25,22 +27,26 @@ type TaskStatus struct {
 	taskid int
 	done   bool
 	status bool
+	name   string
 }
 
-func (wfg *WaitFuncGroup) Add(f func()) {
+// タスクを追加する
+func (wfg *WaitFuncGroup) Add(f func(), name string) {
 	wfg.wg.Add(1)
 
 	wfg.mu.Lock()
 	func_id := len(wfg.funcs) + 1
 	wfg.funcs[func_id] = f
-	wfg.progress[func_id] = TaskStatus{taskid: func_id, done: false, status: false}
+	wfg.progress[func_id] = TaskStatus{taskid: func_id, done: false, status: false, name: name}
 	wfg.mu.Unlock()
 
-	go func(id int) {
+	go func(id int, name string) {
 		defer func() {
+			// panicが起きたときの処理
 			if err := recover(); err != nil {
+				fmt.Println(err)
 				wfg.wg.Done()
-				wfg.ch <- TaskStatus{taskid: id, status: false, done: true}
+				wfg.ch <- TaskStatus{taskid: id, status: false, done: true, name: name}
 				wfg.mu.Lock()
 				for i := 1; i < len(wfg.progress)+1; i++ {
 					if !wfg.progress[i].done {
@@ -55,7 +61,8 @@ func (wfg *WaitFuncGroup) Add(f func()) {
 			}
 		}()
 		f()
-		wfg.ch <- TaskStatus{taskid: id, status: true, done: true}
+		// 正常終了時の処理
+		wfg.ch <- TaskStatus{taskid: id, status: true, done: true, name: name}
 		wfg.mu.Lock()
 		for i := 1; i < len(wfg.progress)+1; i++ {
 			if !wfg.progress[i].done {
@@ -65,7 +72,7 @@ func (wfg *WaitFuncGroup) Add(f func()) {
 		}
 		close(wfg.ch)
 		wfg.mu.Unlock()
-	}(func_id)
+	}(func_id, name)
 }
 
 // タスクが完了するまで待つ
@@ -80,12 +87,12 @@ func (wfg *WaitFuncGroup) Wait() {
 			for i := 1; i < len(wfg.progress)+1; i++ {
 				if wfg.progress[i].done {
 					if wfg.progress[i].status {
-						setCompleteRow(table, i)
+						setCompleteRow(table, i, wfg.progress[i].name)
 					} else {
-						setPanicRow(table, i)
+						setPanicRow(table, i, wfg.progress[i].name)
 					}
 				} else {
-					setWorkingRow(table, i)
+					setWorkingRow(table, i, wfg.progress[i].name)
 				}
 			}
 			wfg.mu.Unlock()
@@ -98,9 +105,9 @@ func (wfg *WaitFuncGroup) Wait() {
 			wfg.mu.Unlock()
 			if wfg.monitor {
 				if taskstatus.status {
-					setCompleteRow(table, taskstatus.taskid)
+					setCompleteRow(table, taskstatus.taskid, taskstatus.name)
 				} else {
-					setPanicRow(table, taskstatus.taskid)
+					setPanicRow(table, taskstatus.taskid, taskstatus.name)
 				}
 			}
 		}
@@ -118,12 +125,12 @@ func (wfg *WaitFuncGroup) Wait() {
 }
 
 // 新しいWaitFuncGroupを作成する
-func NewWaitFuncGroup() *WaitFuncGroup {
+func NewWaitFuncGroup(monitor bool) *WaitFuncGroup {
 	return &WaitFuncGroup{
 		funcs:    make(map[int]func()),
 		progress: make(map[int]TaskStatus),
 		ch:       make(chan TaskStatus),
-		monitor:  false,
+		monitor:  monitor,
 	}
 }
 
